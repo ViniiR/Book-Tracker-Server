@@ -1,0 +1,15 @@
+(library
+  (name lib)
+  (libraries dream postgresql)
+)
+
+; (include_subdirs unqualified)
+
+(rule
+ (targets root.ml)
+ (deps root.eml.html)
+ (action (run dream_eml %{deps} --workspace %{workspace_root})))
+(rule
+ (targets not_found.ml)
+ (deps not_found.eml.html)
+ (action (run dream_eml %{deps} --workspace %{workspace_root})))
