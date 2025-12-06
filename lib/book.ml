@@ -32,6 +32,7 @@ let book_to_json (book : book) : Yojson.Safe.t =
       ("title", `String book.title);
       ("chapter", `Float book.chapter);
       ("cover_image", `String book.cover_image);
+      ("id", `Int book.id);
     ]
 
 let book_list_to_json (list : book list) : Yojson.Safe.t =
@@ -48,15 +49,15 @@ let get_all : routeHandler =
   json json_string
 
 let get : routeHandler =
- fun _req ->
-  let id = id_validator _req in
-  let%lwt _result =
+ fun req ->
+  let id = id_validator req in
+  let%lwt result =
     let%lwt connection = Database.create_connection () in
     let connection = unwrap_or_raise connection in
     Database.get_book connection id
   in
-  (* let json_string = book_to_json result in *)
-  json ""
+  let json_string = Yojson.Safe.to_string @@ book_to_json result in
+  json json_string
 
 let post : routeHandler = fun _req -> empty `Created
 let put (_req : request) : response promise = empty `No_Content

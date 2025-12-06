@@ -24,18 +24,20 @@ let create_connection () =
 
 (** Caqti function to encode database type into ocaml record type Types.book *)
 let encode (book : Lib_types.Book.book) =
-  Ok (book.title, book.chapter, book.cover_image)
+  Ok (book.title, book.chapter, book.cover_image, book.id)
 
 (** Caqti function to decode ocaml record type Types.book into database type *)
-let decode (title, chapter, cover_image) =
-  Ok Lib_types.Book.{ title; chapter; cover_image }
+let decode (title, chapter, cover_image, id) =
+  Ok Lib_types.Book.{ title; chapter; cover_image; id }
 
 (** Get a single book from the database *)
 let get_book (conn : Caqti_lwt.connection) (id : int) =
   let module Conn = (val conn : Caqti_lwt.CONNECTION) in
+  let query_type : Lib_types.Book.book Caqti_type.t =
+    Caqti_type.(custom ~encode ~decode (t4 string float string int))
+  in
   let query =
-    Caqti_type.(int ->! t3 string float string)
-      "SELECT * FROM books WHERE id = $1;"
+    (Caqti_type.int ->! query_type) "SELECT * FROM books WHERE id = $1;"
   in
   let* res = Conn.find query id in
   match res with
@@ -49,7 +51,7 @@ let get_book (conn : Caqti_lwt.connection) (id : int) =
 let get_all_books (conn : Caqti_lwt.connection) =
   let module Conn = (val conn : Caqti_lwt.CONNECTION) in
   let query_type : Lib_types.Book.book Caqti_type.t =
-    Caqti_type.(custom ~encode ~decode (t3 string float string))
+    Caqti_type.(custom ~encode ~decode (t4 string float string int))
   in
   let query = (Caqti_type.unit ->* query_type) "SELECT * FROM books;" in
   let* res = Conn.collect_list query () in
@@ -63,4 +65,4 @@ let get_all_books (conn : Caqti_lwt.connection) =
       raise (Errors.Failed_To_Fetch "No books to be found")
 
 (** Create one book in the database *)
-let create_book (conn : Caqti_lwt.connection) = ()
+(* let create_book (conn : Caqti_lwt.connection) = () *)

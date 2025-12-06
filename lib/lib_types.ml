@@ -1,7 +1,13 @@
 open! Dream
 
 module Book = struct
-  type book = { title : string; chapter : float; cover_image : string }
+  type book = {
+    title : string;
+    chapter : float;
+    cover_image : string;
+    id : int;
+  }
+
   type routeHandler = request -> response promise
 
   module Errors = struct
