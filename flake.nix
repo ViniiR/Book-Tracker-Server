@@ -12,6 +12,9 @@
             NIX_ENFORCE_PURITY = 0;
             LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
 
+            # Dev environment variables
+            PGSQL_CONNECTION = "postgresql://main:development@localhost:5432/main";
+
             # Packages available in the User's shell
             packages = with pkgs; [
                 zsh
@@ -31,7 +34,13 @@
                 ocamlPackages.dream
                 ocamlPackages.dream-pure
                 ocamlPackages.findlib
-                ocamlPackages.postgresql
+                ocamlPackages.lwt
+                ocamlPackages.lwt_ppx
+                ocamlPackages.caqti
+                ocamlPackages.caqti-lwt
+                ocamlPackages.caqti-async
+                ocamlPackages.caqti-driver-postgresql
+                ocamlPackages.yojson
             ];
 
             shellHook = ''

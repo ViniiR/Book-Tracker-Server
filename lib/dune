@@ -1,6 +1,18 @@
 (library
   (name lib)
-  (libraries dream postgresql)
+  (libraries 
+    dream 
+
+    caqti 
+    caqti-lwt 
+    caqti-driver-postgresql 
+
+    lwt
+    lwt.unix
+
+    yojson
+  )
+  (preprocess (pps lwt_ppx))
 )
 
 ; (include_subdirs unqualified)

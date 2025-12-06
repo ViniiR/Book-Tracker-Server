@@ -1,1 +1,1 @@
-lib/not_found.ml: Buffer
+lib/not_found.pp.ml: Buffer
