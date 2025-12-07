@@ -15,7 +15,11 @@
   (preprocess (pps lwt_ppx))
 )
 
-; (include_subdirs unqualified)
+(env
+  (dev
+    (flags (:standard -warn-error -a))
+  )
+)
 
 (rule
  (targets root.ml)
