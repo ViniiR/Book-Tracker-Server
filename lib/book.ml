@@ -20,6 +20,7 @@ let route_error_handler (req : request) (route : routeHandler) :
   try%lwt route req with
   | BookError.Invalid_id msg -> respond ~status:`Bad_Request msg
   | BookError.Invalid_json msg -> respond ~status:`Bad_Request msg
+  | BookError.Incorrect_type msg -> respond ~status:`Bad_Request msg
   | DbError.Failed_to_fetch msg -> respond ~status:`Bad_Request msg
   | DbError.Failed_to_create msg -> respond ~status:`Internal_Server_Error msg
   | DbError.Failed_database_connection msg ->
@@ -41,19 +42,32 @@ let json_of_book (book : id_book) : Yojson.Safe.t =
       ("id", `Int book.id);
     ]
 
-let book_of_json (json_str : string) : book =
+type books = Book of book | Id_Book of id_book
+
+let book_of_json (json_str : string) : books =
   try
     let open! Yojson.Basic in
     let open! Yojson.Basic.Util in
     let json = Yojson.Basic.from_string json_str in
-    let book : book =
-      {
-        title = to_string @@ member "title" json;
-        chapter = to_float @@ member "chapter" json;
-        cover_image = to_string @@ member "cover_image" @@ json;
-      }
-    in
-    book
+    if member "id" json != `Null then
+      let book : id_book =
+        {
+          title = to_string @@ member "title" json;
+          chapter = to_float @@ member "chapter" json;
+          cover_image = to_string @@ member "cover_image" @@ json;
+          id = to_int @@ member "id" @@ json;
+        }
+      in
+      Id_Book book
+    else
+      let book : book =
+        {
+          title = to_string @@ member "title" json;
+          chapter = to_float @@ member "chapter" json;
+          cover_image = to_string @@ member "cover_image" @@ json;
+        }
+      in
+      Book book
   with
   | Yojson.Json_error e ->
       Printf.eprintf "%s" e;
@@ -92,7 +106,11 @@ let get : routeHandler =
 let post : routeHandler =
  fun req ->
   let%lwt body = Dream.body req in
-  let book = book_of_json body in
+  let book : book =
+    match book_of_json body with
+    | Book v -> v
+    | _ -> raise (Errors.Incorrect_type "Expected type book found id_book")
+  in
   let%lwt result =
     let%lwt connection = Database.create_connection () in
     let connection = unwrap_or_raise connection in
@@ -100,6 +118,21 @@ let post : routeHandler =
   in
   if Result.is_ok result then empty `Created else empty `Internal_Server_Error
 
-let put (req : request) : response promise = empty `No_Content
-let patch (req : request) : response promise = empty `No_Content
-let delete (req : request) : response promise = empty `No_Content
+let put : routeHandler =
+ fun req ->
+  let%lwt body = Dream.body req in
+  let book : id_book =
+    match book_of_json body with
+    | Id_Book v -> v
+    | _ -> raise (Errors.Incorrect_type "Expected type id_book found book")
+  in
+  let%lwt result =
+    let%lwt connection = Database.create_connection () in
+    let connection = unwrap_or_raise connection in
+    Database.change_book connection book
+  in
+  if Result.is_ok result then empty `No_Content
+  else empty `Internal_Server_Error
+
+(* let patch (req : request) : response promise = empty `No_Content *)
+(* let delete (req : request) : response promise = empty `No_Content *)

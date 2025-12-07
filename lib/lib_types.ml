@@ -17,6 +17,7 @@ module Book = struct
   module Errors = struct
     exception Invalid_id of string
     exception Invalid_json of string
+    exception Incorrect_type of string
   end
 end
 
@@ -44,5 +45,7 @@ module Db = struct
     exception Failed_database_connection of string
     exception Failed_to_fetch of string
     exception Failed_to_create of string
+    exception Failed_to_change of string
+    exception Failed_to_update of string
   end
 end

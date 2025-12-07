@@ -78,6 +78,19 @@ let create_book (conn : Caqti_lwt.connection) (book : Lib_types.Book.book) =
       log_error e;
       raise (Errors.Failed_to_create "Could not create book")
 
+let change_book (conn : Caqti_lwt.connection) (book : Lib_types.Book.id_book) =
+  let module Conn = (val conn : Caqti_lwt.CONNECTION) in
+  let query =
+    (caqti_id_book ->. Caqti_type.unit)
+      "UPDATE books set title = $1, chapter = $2, image_link =$3 WHERE id = $4;"
+  in
+  let* res = Conn.exec query book in
+  match res with
+  | Ok _ -> Lwt.return_ok ()
+  | Error e ->
+      log_error e;
+      raise (Errors.Failed_to_change "Could not change book")
+
 (* type pool = { *)
 (*   connections : Caqti_lwt.connection Queue.t; *)
 (*   mutex : Lwt_mutex.t; *)

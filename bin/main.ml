@@ -14,7 +14,8 @@ let () =
          Dream.get "/book/:id" (fun req ->
              Book.route_error_handler req Book.get);
          Dream.post "/book" (fun req -> Book.route_error_handler req Book.post);
-         (* Dream.put "/book/:id" (fun req -> Book.put req); *)
+         Dream.put "/book/:id" (fun req ->
+             Book.route_error_handler req Book.put);
          (* Dream.patch "/book/:id" (fun req -> Book.patch req); *)
          (* Dream.delete "/book/:id" (fun req -> Book.delete req); *)
          (* Root *)
