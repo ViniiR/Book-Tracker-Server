@@ -14,10 +14,11 @@ let () =
          Dream.get "/book/:id" (fun req ->
              Book.route_error_handler req Book.get);
          Dream.post "/book" (fun req -> Book.route_error_handler req Book.post);
-         Dream.put "/book/:id" (fun req ->
-             Book.route_error_handler req Book.put);
-         (* Dream.patch "/book/:id" (fun req -> Book.patch req); *)
-         (* Dream.delete "/book/:id" (fun req -> Book.delete req); *)
+         Dream.put "/book/:id" (fun _ -> Dream.empty `Method_Not_Allowed);
+         Dream.patch "/book/:id" (fun req ->
+             Book.route_error_handler req Book.patch);
+         Dream.delete "/book/:id" (fun req ->
+             Book.route_error_handler req Book.delete);
          (* Root *)
          Dream.get "/" (fun _ ->
              Root.render ~text:"We do not serve HTML ;)" |> Dream.html);

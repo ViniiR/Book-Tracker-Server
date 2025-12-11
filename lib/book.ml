@@ -21,65 +21,23 @@ let route_error_handler (req : request) (route : routeHandler) :
   | BookError.Invalid_id msg -> respond ~status:`Bad_Request msg
   | BookError.Invalid_json msg -> respond ~status:`Bad_Request msg
   | BookError.Incorrect_type msg -> respond ~status:`Bad_Request msg
-  | DbError.Failed_to_fetch msg -> respond ~status:`Bad_Request msg
-  | DbError.Failed_to_create msg -> respond ~status:`Internal_Server_Error msg
+  | BookError.Missing_field msg -> respond ~status:`Bad_Request msg
+  | BookError.No_fields msg -> respond ~status:`Bad_Request msg
   | DbError.Failed_database_connection msg ->
       respond ~status:`Internal_Server_Error msg
   | DbError.Missing_env_variable msg ->
       respond ~status:`Internal_Server_Error msg
+  | DbError.Failed_to_fetch msg -> respond ~status:`Not_Found msg
+  | DbError.Failed_to_create msg -> respond ~status:`Internal_Server_Error msg
+  | DbError.Failed_to_update msg -> respond ~status:`Internal_Server_Error msg
+  | DbError.Failed_to_delete msg -> respond ~status:`Internal_Server_Error msg
+  | DbError.Update_on_incorrect msg -> respond ~status:`Bad_Request msg
+  | DbError.Update_on_nonexistent msg -> respond ~status:`Bad_Request msg
 (* Throw any unknown errors *)
 (* | _ -> *)
 (*     Printf.eprintf "%s\n" "Some damn error occurred"; *)
 (*     Stdlib.flush stderr; *)
 (*     respond ~status:`Internal_Server_Error "Internal Server Error" *)
-
-let json_of_book (book : id_book) : Yojson.Safe.t =
-  `Assoc
-    [
-      ("title", `String book.title);
-      ("chapter", `Float book.chapter);
-      ("cover_image", `String book.cover_image);
-      ("id", `Int book.id);
-    ]
-
-type books = Book of book | Id_Book of id_book
-
-let book_of_json (json_str : string) : books =
-  try
-    let open! Yojson.Basic in
-    let open! Yojson.Basic.Util in
-    let json = Yojson.Basic.from_string json_str in
-    if member "id" json != `Null then
-      let book : id_book =
-        {
-          title = to_string @@ member "title" json;
-          chapter = to_float @@ member "chapter" json;
-          cover_image = to_string @@ member "cover_image" @@ json;
-          id = to_int @@ member "id" @@ json;
-        }
-      in
-      Id_Book book
-    else
-      let book : book =
-        {
-          title = to_string @@ member "title" json;
-          chapter = to_float @@ member "chapter" json;
-          cover_image = to_string @@ member "cover_image" @@ json;
-        }
-      in
-      Book book
-  with
-  | Yojson.Json_error e ->
-      Printf.eprintf "%s" e;
-      Stdlib.flush stderr;
-      raise (Lib_types.Book.Errors.Invalid_json "JSON is not valid")
-  | Yojson.Basic.Util.Type_error (msg, _) (* _ will usually be null *) ->
-      Printf.eprintf "\nError: %s\n" msg;
-      Stdlib.flush stderr;
-      raise (Lib_types.Book.Errors.Invalid_json "JSON is not valid")
-
-let json_of_book_list (list : id_book list) : Yojson.Safe.t =
-  `List (List.map (fun book -> json_of_book book) list)
 
 let get_all : routeHandler =
  fun _ ->
@@ -88,8 +46,13 @@ let get_all : routeHandler =
     let connection = unwrap_or_raise connection in
     Database.get_all_books connection
   in
-  let json_string = Yojson.Safe.to_string @@ json_of_book_list result in
-  json json_string
+  if Result.is_ok result then
+    let books = Result.get_ok result in
+    let json_string =
+      Yojson.Safe.to_string @@ Lib_parse.json_of_book_list books
+    in
+    json json_string
+  else raise @@ Result.get_error result
 
 let get : routeHandler =
  fun req ->
@@ -99,40 +62,66 @@ let get : routeHandler =
     let connection = unwrap_or_raise connection in
     Database.get_book connection id
   in
-  let json_string = Yojson.Safe.to_string @@ json_of_book result in
-  json json_string
+  if Result.is_ok result then
+    let book = Result.get_ok result in
+    let json_string = Yojson.Safe.to_string @@ Lib_parse.json_of_book @@ book in
+    json json_string
+  else raise @@ Result.get_error result
 
 (* TODO: database pool *)
 let post : routeHandler =
  fun req ->
   let%lwt body = Dream.body req in
-  let book : book =
-    match book_of_json body with
-    | Book v -> v
-    | _ -> raise (Errors.Incorrect_type "Expected type book found id_book")
-  in
+  let book : create_book = Lib_parse.create_book_of_json body in
   let%lwt result =
     let%lwt connection = Database.create_connection () in
     let connection = unwrap_or_raise connection in
     Database.create_book connection book
   in
-  if Result.is_ok result then empty `Created else empty `Internal_Server_Error
+  if Result.is_ok result then empty `Created
+  else raise @@ Result.get_error result
 
-let put : routeHandler =
+(* NOTE: if id is sent via request.body it will be ignored *)
+(** INFO: removed since you never really get to override all the data on the
+    database *)
+(* let put : routeHandler = *)
+(*  fun req -> *)
+(*   let id = id_validator req in *)
+(*   let%lwt body = Dream.body req in *)
+(*   let book = input_book_of_json body in *)
+(*   let%lwt result = *)
+(*     let%lwt connection = Database.create_connection () in *)
+(*     let connection = unwrap_or_raise connection in *)
+(*     Database.change_book connection book *)
+(*   in *)
+(*   if Result.is_ok result then empty `No_Content *)
+(*   else empty `Internal_Server_Error *)
+
+let patch : routeHandler =
  fun req ->
   let%lwt body = Dream.body req in
-  let book : id_book =
-    match book_of_json body with
-    | Id_Book v -> v
-    | _ -> raise (Errors.Incorrect_type "Expected type id_book found book")
-  in
+  let id = id_validator req in
+  let book : patch_book = Lib_parse.patch_book_of_json body in
+  if
+    let open Option in
+    is_none book.title_opt && is_none book.chapter_opt
+    && is_none book.cover_image_opt
+  then raise (Errors.No_fields "No fields have been sent");
   let%lwt result =
     let%lwt connection = Database.create_connection () in
     let connection = unwrap_or_raise connection in
-    Database.change_book connection book
+    Database.update_book connection book id
   in
   if Result.is_ok result then empty `No_Content
-  else empty `Internal_Server_Error
+  else raise @@ Result.get_error result
 
-(* let patch (req : request) : response promise = empty `No_Content *)
-(* let delete (req : request) : response promise = empty `No_Content *)
+let delete : routeHandler =
+ fun req ->
+  let id = id_validator req in
+  let%lwt result =
+    let%lwt connection = Database.create_connection () in
+    let connection = unwrap_or_raise connection in
+    Database.delete_book connection id
+  in
+  if Result.is_ok result then empty `No_Content
+  else raise @@ Result.get_error result
