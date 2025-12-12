@@ -95,7 +95,6 @@ let patch : routeHandler =
   let* result = Database.update_book pool book id in
   match result with Ok _ -> empty `No_Content | Error e -> raise e
 
-(* TODO: error if book is non existent *)
 let delete : routeHandler =
  fun req pool ->
   let id = id_validator req in

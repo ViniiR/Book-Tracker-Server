@@ -124,31 +124,21 @@ let update_book (pool : pool) (book : Lib_types.Book.patch_book) (id : int) =
       (fun (module Db : Caqti_lwt.CONNECTION) ->
         let query =
           Caqti_type.(
-            t5 string float string int64 int ->? Caqti_type.int)
-            (* TODO: change 404.404 to NULL *)
+            t5 (option string) (option float) (option string) int64 int ->? Caqti_type.int)
             (* syntax-sql *)
             {|
                UPDATE books SET
-                 title = COALESCE(NULLIF ($1, ''), title),
-                 chapter = COALESCE(NULLIF ($2, 404.404), chapter),
-                 image_link = COALESCE(NULLIF ($3, ''), image_link),
+                 title = COALESCE($1, title),
+                 chapter = COALESCE($2, chapter),
+                 image_link = COALESCE($3, image_link),
                  last_modified = $4
                WHERE id = $5 RETURNING id;
             |}
             [@@ocamlformat "disable"]
         in
-        let title = match book.title_opt with Some v -> v | None -> "" in
-        let chapter =
-          (* FIXME: 404.404 is a magic number *)
-          match book.chapter_opt with
-          | Some v -> v
-          | None -> 404.404
-        in
-        let cover_image =
-          match book.cover_image_opt with Some v -> v | None -> ""
-        in
         let timestamp = Int64.of_float @@ Unix.time () in
-        Db.find_opt query (title, chapter, cover_image, timestamp, id))
+        Db.find_opt query
+          (book.title_opt, book.chapter_opt, book.cover_image_opt, timestamp, id))
       pool
   in
   match res with

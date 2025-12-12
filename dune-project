@@ -1,6 +1,7 @@
 (lang dune 3.18)
 
 (name server)
+(version 53a71e5-dirty)
 
 (generate_opam_files true)
 
