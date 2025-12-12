@@ -8,10 +8,28 @@ let get_env name =
   try Sys.getenv name
   with _ -> raise (Errors.Missing_env_variable ("$" ^ name))
 
+let log_error error =
+  Printf.eprintf "%s" @@ Caqti_error.show error;
+  flush stderr;
+  ()
+
 module Env : sig
   val conn_string : string
 end = struct
   let conn_string = get_env "PGSQL_CONNECTION"
+end
+
+module Pool = struct
+  let config = Caqti_pool_config.create ~max_size:5 ()
+
+  let pool =
+    let uri = Uri.of_string Env.conn_string in
+    match Caqti_lwt_unix.connect_pool ~pool_config:config uri with
+    | Ok pool -> pool
+    | Error e ->
+        log_error e;
+        raise
+          (Errors.Failed_database_connection "Failed to connect to database")
 end
 
 (*
@@ -25,65 +43,61 @@ end
     ->. expects no row
 *)
 
-let create_connection () =
-  let uri = Uri.of_string Env.conn_string in
-  let* result = Caqti_lwt_unix.connect uri in
-  match result with
-  | Ok m -> Lwt.return_ok m
-  | Error _ ->
-      raise (Errors.Failed_database_connection "Failed to connect to database")
-
-let log_error error =
-  Printf.eprintf "%s" @@ Caqti_error.show error;
-  flush stderr;
-  ()
-
 (** Get a single book from the database *)
-let get_book (conn : Caqti_lwt.connection) (id : int) =
-  let module Conn = (val conn : Caqti_lwt.CONNECTION) in
-  let query =
-    (Caqti_type.int ->! caqti_book) "SELECT * FROM books WHERE id = $1;"
+let get_book (pool : pool) (id : int) =
+  let* res =
+    Caqti_lwt_unix.Pool.use
+      (fun (module Db : Caqti_lwt.CONNECTION) ->
+        let query =
+          (Caqti_type.int ->! caqti_book) "SELECT * FROM books WHERE id = $1;"
+        in
+        Db.find query id)
+      pool
   in
-  let* res = Conn.find query id in
   match res with
-  | Ok v -> Lwt.return_ok v
+  | Ok v -> Lwt_result.return v
   | Error e ->
       log_error e;
-      Lwt.return_error (Errors.Failed_to_fetch "Book does not exist")
+      Lwt_result.fail (Errors.Failed_to_fetch "Book does not exist")
 
 (** Get all books from the database *)
-let get_all_books (conn : Caqti_lwt.connection) =
-  let module Conn = (val conn : Caqti_lwt.CONNECTION) in
-  let query = (Caqti_type.unit ->* caqti_book) "SELECT * FROM books;" in
-  let* res = Conn.collect_list query () in
+let get_all_books (pool : pool) =
+  let* res =
+    Caqti_lwt_unix.Pool.use
+      (fun (module Db : Caqti_lwt.CONNECTION) ->
+        let query = (Caqti_type.unit ->* caqti_book) "SELECT * FROM books;" in
+        Db.collect_list query ())
+      pool
+  in
   match res with
   | Ok v ->
-      if List.length v >= 1 then Lwt.return_ok v
-      else Lwt.return_error (Errors.Failed_to_fetch "No books to be found")
+      if List.length v >= 1 then Lwt_result.return v
+      else Lwt_result.fail (Errors.Failed_to_fetch "No books to be found")
   | Error e ->
       log_error e;
-      Lwt.return_error (Errors.Failed_to_fetch "No books to be found")
+      Lwt_result.fail (Errors.Failed_to_fetch "No books to be found")
 
 (** Create one book in the database *)
-let create_book (conn : Caqti_lwt.connection)
-    (book : Lib_types.Book.create_book) =
-  let module Conn = (val conn : Caqti_lwt.CONNECTION) in
-  let timestamp = Int64.of_float @@ Unix.time () in
-  let query =
-    let open Caqti_type in
-    (t4 string float string int64 ->. Caqti_type.unit)
-      "INSERT INTO books (title, chapter, image_link, last_modified) VALUES \
-       ($1, $2, $3, $4)"
-  in
+let create_book (pool : pool) (book : Lib_types.Book.create_book) =
   let* res =
-    let title, chapter, cover_image = book in
-    Conn.exec query (title, chapter, cover_image, timestamp)
+    Caqti_lwt_unix.Pool.use
+      (fun (module Db : Caqti_lwt.CONNECTION) ->
+        let timestamp = Int64.of_float @@ Unix.time () in
+        let query =
+          let open Caqti_type in
+          (t4 string float string int64 ->. Caqti_type.unit)
+            "INSERT INTO books (title, chapter, image_link, last_modified) \
+             VALUES ($1, $2, $3, $4)"
+        in
+        let title, chapter, cover_image = book in
+        Db.exec query (title, chapter, cover_image, timestamp))
+      pool
   in
   match res with
-  | Ok _ -> Lwt.return_ok ()
+  | Ok _ -> Lwt_result.return ()
   | Error e ->
       log_error e;
-      Lwt.return_error (Errors.Failed_to_create "Could not create book")
+      Lwt_result.fail (Errors.Failed_to_create "Could not create book")
 
 (* Change one book in the database *)
 (** INFO: removed since you never really get to override all the data on the
@@ -104,81 +118,75 @@ let create_book (conn : Caqti_lwt.connection)
 (*       raise (Errors.Failed_to_change "Could not change book") *)
 
 (** Update part of one book in the database *)
-let update_book (conn : Caqti_lwt.connection) (book : Lib_types.Book.patch_book)
-    (id : int) =
-  let module Conn = (val conn : Caqti_lwt.CONNECTION) in
-  let query =
-    Caqti_type.(
-      t5 string float string int64 int
-      ->? Caqti_type.int)
-      (* TODO: chnage 404.404 to NULL *)
-      (* syntax-sql *)
-      {|
-        -- BEGIN
-        --   IF EXISTS(
-        --       SELECT 1 FROM books
-        --       WHERE id = $5
-        --   ) THEN
-            UPDATE books SET
-              title = COALESCE(NULLIF ($1, ''), title),
-              chapter = COALESCE(NULLIF ($2, 404.404), chapter),
-              image_link = COALESCE(NULLIF ($3, ''), image_link),
-              last_modified = $4
-            WHERE id = $5 RETURNING id;
-        --   ELSE
-        --       RAISE EXCEPTION "book does not exist";
-        --   END IF;
-        -- END
-      |}
-      [@@ocamlformat "disable"]
-  in
+let update_book (pool : pool) (book : Lib_types.Book.patch_book) (id : int) =
   let* res =
-    let title = match book.title_opt with Some v -> v | None -> "" in
-    let chapter = match book.chapter_opt with Some v -> v | None -> 404.404 in
-    let cover_image =
-      match book.cover_image_opt with Some v -> v | None -> ""
-    in
-    let timestamp = Int64.of_float @@ Unix.time () in
-
-    Conn.find_opt query (title, chapter, cover_image, timestamp, id)
+    Caqti_lwt_unix.Pool.use
+      (fun (module Db : Caqti_lwt.CONNECTION) ->
+        let query =
+          Caqti_type.(
+            t5 string float string int64 int ->? Caqti_type.int)
+            (* TODO: change 404.404 to NULL *)
+            (* syntax-sql *)
+            {|
+               UPDATE books SET
+                 title = COALESCE(NULLIF ($1, ''), title),
+                 chapter = COALESCE(NULLIF ($2, 404.404), chapter),
+                 image_link = COALESCE(NULLIF ($3, ''), image_link),
+                 last_modified = $4
+               WHERE id = $5 RETURNING id;
+            |}
+            [@@ocamlformat "disable"]
+        in
+        let title = match book.title_opt with Some v -> v | None -> "" in
+        let chapter =
+          (* FIXME: 404.404 is a magic number *)
+          match book.chapter_opt with
+          | Some v -> v
+          | None -> 404.404
+        in
+        let cover_image =
+          match book.cover_image_opt with Some v -> v | None -> ""
+        in
+        let timestamp = Int64.of_float @@ Unix.time () in
+        Db.find_opt query (title, chapter, cover_image, timestamp, id))
+      pool
   in
   match res with
   | Ok opt -> (
       match opt with
       | Some v ->
-          if v == id then Lwt.return_ok ()
+          if v == id then Lwt_result.return ()
           else
-            Lwt.return_error
-              (Errors.Update_on_incorrect "Query on incorrect id")
+            Lwt_result.fail (Errors.Update_on_incorrect "Query on incorrect id")
       | None ->
-          Lwt.return_error
+          Lwt_result.fail
             (Errors.Update_on_nonexistent "Query on non existent id"))
   | Error e ->
       log_error e;
-      Lwt.return_error (Errors.Failed_to_update "Could not update book")
+      Lwt_result.fail (Errors.Failed_to_update "Could not update book")
 
 (** Delete a book from the database *)
-let delete_book (conn : Caqti_lwt.connection) (id : int) =
-  let module Conn = (val conn : Caqti_lwt.CONNECTION) in
-  let query =
-    Caqti_type.(int ->. Caqti_type.unit) "DELETE FROM books WHERE id = $1;"
+let delete_book (pool : pool) (id : int) =
+  let* res =
+    Caqti_lwt_unix.Pool.use
+      (fun (module Db : Caqti_lwt.CONNECTION) ->
+        let query =
+          Caqti_type.(int ->? int)
+            "DELETE FROM books WHERE id = $1 RETURNING id;"
+        in
+        Db.find_opt query id)
+      pool
   in
-  let* res = Conn.exec query id in
   match res with
-  | Ok _ -> Lwt.return_ok ()
+  | Ok opt -> (
+      match opt with
+      | Some v ->
+          if v == id then Lwt_result.return ()
+          else
+            Lwt_result.fail (Errors.Update_on_incorrect "Query on incorrect id")
+      | None ->
+          Lwt_result.fail (Errors.Delete_on_nonexistent "Query on incorrect id")
+      )
   | Error e ->
       log_error e;
-      Lwt.return_error (Errors.Failed_to_delete "Could not delete book")
-
-(* type pool = { *)
-(*   connections : Caqti_lwt.connection Queue.t; *)
-(*   mutex : Lwt_mutex.t; *)
-(*   max_size : int; *)
-(*   uri : Uri.t; *)
-(* } *)
-(**)
-(* let create_pool = *)
-(*   let pool_config = { *)
-(*         connections *)
-(*     } in *)
-(*   Caqti_lwt_unix.connect_pool *)
+      Lwt_result.fail (Errors.Failed_to_delete "Could not delete book")

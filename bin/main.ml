@@ -1,6 +1,7 @@
 open Lib
 
 let () =
+  let pool = Database.Pool.pool in
   (* let open Dream in *)
   Dream.logger
   @@ Dream.router
@@ -10,15 +11,16 @@ let () =
          *)
          (* Book *)
          Dream.get "/books" (fun req ->
-             Book.route_error_handler req Book.get_all);
+             Book.route_error_handler req pool Book.get_all);
          Dream.get "/book/:id" (fun req ->
-             Book.route_error_handler req Book.get);
-         Dream.post "/book" (fun req -> Book.route_error_handler req Book.post);
+             Book.route_error_handler req pool Book.get);
+         Dream.post "/book" (fun req ->
+             Book.route_error_handler req pool Book.post);
          Dream.put "/book/:id" (fun _ -> Dream.empty `Method_Not_Allowed);
          Dream.patch "/book/:id" (fun req ->
-             Book.route_error_handler req Book.patch);
+             Book.route_error_handler req pool Book.patch);
          Dream.delete "/book/:id" (fun req ->
-             Book.route_error_handler req Book.delete);
+             Book.route_error_handler req pool Book.delete);
          (* Root *)
          Dream.get "/" (fun _ ->
              Root.render ~text:"We do not serve HTML ;)" |> Dream.html);

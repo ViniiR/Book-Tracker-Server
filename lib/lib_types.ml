@@ -24,7 +24,8 @@ module Book = struct
   }
   [@@deriving yojson]
 
-  type routeHandler = request -> response promise
+  type pool = (Caqti_lwt.connection, Caqti_error.t) Caqti_lwt_unix.Pool.t
+  type routeHandler = request -> pool -> response promise
 
   module Errors = struct
     exception Invalid_id of string
@@ -36,7 +37,8 @@ module Book = struct
 end
 
 module Db = struct
-  (** NOTE: only used for querying data *)
+  type pool = Book.pool
+
   let caqti_book : Book.book Caqti_type.t =
     let encode (book : Book.book) =
       Ok
@@ -56,5 +58,7 @@ module Db = struct
     exception Failed_to_delete of string
     exception Update_on_incorrect of string
     exception Update_on_nonexistent of string
+    exception Delete_on_incorrect of string
+    exception Delete_on_nonexistent of string
   end
 end
