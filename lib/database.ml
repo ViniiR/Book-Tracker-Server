@@ -145,7 +145,7 @@ let update_book (pool : pool) (book : Lib_types.Book.patch_book) (id : int) =
   | Ok opt -> (
       match opt with
       | Some v ->
-          if v == id then Lwt_result.return ()
+          if v = id then Lwt_result.return ()
           else
             Lwt_result.fail (Errors.Update_on_incorrect "Query on incorrect id")
       | None ->
@@ -171,7 +171,7 @@ let delete_book (pool : pool) (id : int) =
   | Ok opt -> (
       match opt with
       | Some v ->
-          if v == id then Lwt_result.return ()
+          if v = id then Lwt_result.return ()
           else
             Lwt_result.fail (Errors.Update_on_incorrect "Query on incorrect id")
       | None ->
