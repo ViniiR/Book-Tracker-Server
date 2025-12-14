@@ -10,8 +10,7 @@ let get_env name =
 
 let log_error error =
   Printf.eprintf "%s" @@ Caqti_error.show error;
-  flush stderr;
-  ()
+  flush stderr
 
 module Env : sig
   val conn_string : string
@@ -22,14 +21,13 @@ end
 module Pool = struct
   let config = Caqti_pool_config.create ~max_size:5 ()
 
-  let pool =
+  let create =
     let uri = Uri.of_string Env.conn_string in
     match Caqti_lwt_unix.connect_pool ~pool_config:config uri with
     | Ok pool -> pool
     | Error e ->
         log_error e;
-        raise
-          (Errors.Failed_database_connection "Failed to connect to database")
+        raise (Errors.Failed_pool_creation "Failed to create pool")
 end
 
 (*
@@ -42,30 +40,21 @@ end
     ->* decodes many rows
     ->. expects no row
 *)
-
-(** Get a single book from the database *)
-let get_book (pool : pool) (id : int) =
-  let* res =
-    Caqti_lwt_unix.Pool.use
-      (fun (module Db : Caqti_lwt.CONNECTION) ->
-        let query =
-          (Caqti_type.int ->! caqti_book) "SELECT * FROM books WHERE id = $1;"
-        in
-        Db.find query id)
-      pool
-  in
-  match res with
-  | Ok v -> Lwt_result.return v
-  | Error e ->
-      log_error e;
-      Lwt_result.fail (Errors.Failed_to_fetch "Book does not exist")
+let handle_caqti_error (e : Caqti_error.t) =
+  match e with
+  | `Connect_failed _ | `Connect_rejected _ ->
+      raise (Errors.Failed_pool_connection "Failed pool connection")
+  | `Request_failed _ | `Response_failed _
+  | `Response_rejected _ (* Response_rejected *) ->
+      raise (Errors.Failed_to_fetch "No books to be found")
+  | _ -> raise (Errors.Internal_error "Internal Error")
 
 (** Get all books from the database *)
 let get_all_books (pool : pool) =
   let* res =
     Caqti_lwt_unix.Pool.use
       (fun (module Db : Caqti_lwt.CONNECTION) ->
-        let query = (Caqti_type.unit ->* caqti_book) "SELECT * FROM books;" in
+        let query = Caqti_type.(unit ->* caqti_book) "SELECT * FROM books;" in
         Db.collect_list query ())
       pool
   in
@@ -75,7 +64,24 @@ let get_all_books (pool : pool) =
       else Lwt_result.fail (Errors.Failed_to_fetch "No books to be found")
   | Error e ->
       log_error e;
-      Lwt_result.fail (Errors.Failed_to_fetch "No books to be found")
+      Lwt_result.fail @@ handle_caqti_error e
+
+(** Get a single book from the database *)
+let get_book (pool : pool) (id : int) =
+  let* res =
+    Caqti_lwt_unix.Pool.use
+      (fun (module Db : Caqti_lwt.CONNECTION) ->
+        let query =
+          Caqti_type.(int ->! caqti_book) "SELECT * FROM books WHERE id = $1;"
+        in
+        Db.find query id)
+      pool
+  in
+  match res with
+  | Ok v -> Lwt_result.return v
+  | Error e ->
+      log_error e;
+      Lwt_result.fail @@ handle_caqti_error e
 
 (** Create one book in the database *)
 let create_book (pool : pool) (book : Lib_types.Book.create_book) =
@@ -84,8 +90,7 @@ let create_book (pool : pool) (book : Lib_types.Book.create_book) =
       (fun (module Db : Caqti_lwt.CONNECTION) ->
         let timestamp = Int64.of_float @@ Unix.time () in
         let query =
-          let open Caqti_type in
-          (t4 string float string int64 ->. Caqti_type.unit)
+          Caqti_type.(t4 string float string int64 ->. unit)
             "INSERT INTO books (title, chapter, image_link, last_modified) \
              VALUES ($1, $2, $3, $4)"
         in
@@ -97,7 +102,7 @@ let create_book (pool : pool) (book : Lib_types.Book.create_book) =
   | Ok _ -> Lwt_result.return ()
   | Error e ->
       log_error e;
-      Lwt_result.fail (Errors.Failed_to_create "Could not create book")
+      Lwt_result.fail @@ handle_caqti_error e
 
 (* Change one book in the database *)
 (** INFO: removed since you never really get to override all the data on the
@@ -124,7 +129,7 @@ let update_book (pool : pool) (book : Lib_types.Book.patch_book) (id : int) =
       (fun (module Db : Caqti_lwt.CONNECTION) ->
         let query =
           Caqti_type.(
-            t5 (option string) (option float) (option string) int64 int ->? Caqti_type.int)
+            t5 (option string) (option float) (option string) int64 int ->? int)
             (* syntax-sql *)
             {|
                UPDATE books SET
@@ -153,7 +158,7 @@ let update_book (pool : pool) (book : Lib_types.Book.patch_book) (id : int) =
             (Errors.Update_on_nonexistent "Query on non existent id"))
   | Error e ->
       log_error e;
-      Lwt_result.fail (Errors.Failed_to_update "Could not update book")
+      Lwt_result.fail @@ handle_caqti_error e
 
 (** Delete a book from the database *)
 let delete_book (pool : pool) (id : int) =
@@ -179,4 +184,4 @@ let delete_book (pool : pool) (id : int) =
       )
   | Error e ->
       log_error e;
-      Lwt_result.fail (Errors.Failed_to_delete "Could not delete book")
+      Lwt_result.fail @@ handle_caqti_error e

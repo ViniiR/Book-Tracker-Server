@@ -25,7 +25,7 @@ module Book = struct
   [@@deriving yojson]
 
   type pool = (Caqti_lwt.connection, Caqti_error.t) Caqti_lwt_unix.Pool.t
-  type routeHandler = request -> pool -> response promise
+  type routeHandler = request -> response promise
 
   module Errors = struct
     exception Invalid_id of string
@@ -39,6 +39,10 @@ end
 module Db = struct
   type pool = Book.pool
 
+  let pool_field :
+      (Caqti_lwt.connection, Caqti_error.t) Caqti_lwt_unix.Pool.t Dream.field =
+    Dream.new_field ()
+
   let caqti_book : Book.book Caqti_type.t =
     let encode (book : Book.book) =
       Ok
@@ -51,7 +55,13 @@ module Db = struct
 
   module Errors = struct
     exception Missing_env_variable of string
+
+    (* NOTE: database connection is the actual Database connection *)
     exception Failed_database_connection of string
+
+    (* NOTE: pool connection is a "result" of (Database connection, caqti error) *)
+    exception Failed_pool_connection of string
+    exception Failed_pool_creation of string
     exception Failed_to_fetch of string
     exception Failed_to_create of string
     exception Failed_to_update of string
@@ -60,5 +70,6 @@ module Db = struct
     exception Update_on_nonexistent of string
     exception Delete_on_incorrect of string
     exception Delete_on_nonexistent of string
+    exception Internal_error of string
   end
 end

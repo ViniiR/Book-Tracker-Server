@@ -14,6 +14,8 @@
 
             # Dev environment variables
             PGSQL_CONNECTION = "postgresql://main:development@localhost:5432/main";
+            AUTH_USERNAME = "dev";
+            AUTH_PASSWORD = "developmentpassword";
 
             # Packages available in the User's shell
             packages = with pkgs; [

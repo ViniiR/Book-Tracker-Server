@@ -3,41 +3,21 @@ open! Lwt.Infix
 open! Lwt.Syntax
 open! Lib_types.Book
 
-let id = "id"
-
 let id_validator (req : request) =
-  match int_of_string_opt @@ param req id with
-  | Some n -> n
+  match int_of_string_opt @@ param req "id" with
+  | Some n when n > 0 -> n
   | None -> raise (Errors.Invalid_id "Invalid Book Id")
+  | _ -> raise (Errors.Invalid_id "Id cannot be negative")
 
-(** Universal route Error handler *)
-let route_error_handler (req : request) (pool : pool) (route : routeHandler) :
-    response promise =
-  let module DbError = Lib_types.Db.Errors in
-  let module BookError = Errors in
-  try%lwt route req pool with
-  | BookError.Invalid_id msg -> respond ~status:`Bad_Request msg
-  | BookError.Invalid_json msg -> respond ~status:`Bad_Request msg
-  | BookError.Incorrect_type msg -> respond ~status:`Bad_Request msg
-  | BookError.Missing_field msg -> respond ~status:`Bad_Request msg
-  | BookError.No_fields msg -> respond ~status:`Bad_Request msg
-  | DbError.Failed_database_connection msg ->
-      respond ~status:`Internal_Server_Error msg
-  | DbError.Missing_env_variable msg ->
-      respond ~status:`Internal_Server_Error msg
-  | DbError.Failed_to_fetch msg -> respond ~status:`Not_Found msg
-  | DbError.Failed_to_create msg -> respond ~status:`Internal_Server_Error msg
-  | DbError.Failed_to_update msg -> respond ~status:`Internal_Server_Error msg
-  | DbError.Failed_to_delete msg -> respond ~status:`Internal_Server_Error msg
-  | DbError.Update_on_incorrect msg -> respond ~status:`Bad_Request msg
-  | DbError.Update_on_nonexistent msg -> respond ~status:`Bad_Request msg
-  | DbError.Delete_on_incorrect msg -> respond ~status:`Bad_Request msg
-  | DbError.Delete_on_nonexistent msg -> respond ~status:`No_Content msg
-  (* Throw any unknown errors *)
-  (* | _ -> failwith "Unhandled error" *)
+let get_pool req =
+  let module DbErr = Lib_types.Db.Errors in
+  match Dream.field req Lib_types.Db.pool_field with
+  | Some c -> c
+  | None -> raise (DbErr.Failed_pool_connection "Failed pool connection")
 
 let get_all : routeHandler =
- fun _ pool ->
+ fun req ->
+  let pool = get_pool req in
   let* result = Database.get_all_books pool in
   match result with
   | Ok books ->
@@ -48,8 +28,9 @@ let get_all : routeHandler =
   | Error e -> raise e
 
 let get : routeHandler =
- fun req pool ->
+ fun req ->
   let id = id_validator req in
+  let pool = get_pool req in
   let* result = Database.get_book pool id in
   match result with
   | Ok book ->
@@ -60,15 +41,15 @@ let get : routeHandler =
   | Error e -> raise e
 
 let post : routeHandler =
- fun req pool ->
+ fun req ->
   let* body = Dream.body req in
+  let pool = get_pool req in
   let book : create_book = Lib_parse.create_book_of_json body in
   let* result = Database.create_book pool book in
   match result with Ok _ -> empty `Created | Error e -> raise e
 
 (* NOTE: if id is sent via request.body it will be ignored *)
-(** INFO: removed since you never really get to override all the data on the
-    database *)
+(* INFO: removed since you never really get to override all the data on the database *)
 (* let put : routeHandler = *)
 (*  fun req -> *)
 (*   let id = id_validator req in *)
@@ -83,10 +64,11 @@ let post : routeHandler =
 (*   else empty `Internal_Server_Error *)
 
 let patch : routeHandler =
- fun req pool ->
+ fun req ->
   let* body = Dream.body req in
   let id = id_validator req in
   let book : patch_book = Lib_parse.patch_book_of_json body in
+  let pool = get_pool req in
   if
     let open Option in
     is_none book.title_opt && is_none book.chapter_opt
@@ -96,7 +78,8 @@ let patch : routeHandler =
   match result with Ok _ -> empty `No_Content | Error e -> raise e
 
 let delete : routeHandler =
- fun req pool ->
+ fun req ->
   let id = id_validator req in
+  let pool = get_pool req in
   let* result = Database.delete_book pool id in
   match result with Ok _ -> empty `No_Content | Error e -> raise e

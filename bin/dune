@@ -4,3 +4,9 @@
   (libraries lib)
   (preprocess (pps lwt_ppx))
 )
+
+(env
+  (dev
+    (flags (:standard -warn-error -a))
+  )
+)
