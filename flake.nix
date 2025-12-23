@@ -43,6 +43,7 @@
                 ocamlPackages.caqti-async
                 ocamlPackages.caqti-driver-postgresql
                 ocamlPackages.yojson
+                ocamlPackages.alcotest
             ];
 
             shellHook = ''

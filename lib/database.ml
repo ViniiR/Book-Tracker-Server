@@ -40,13 +40,14 @@ end
     ->* decodes many rows
     ->. expects no row
 *)
-let handle_caqti_error (e : Caqti_error.t) =
+
+let handle_caqti_error (e : Caqti_error.t) ~on_query_error =
   match e with
   | `Connect_failed _ | `Connect_rejected _ ->
       raise (Errors.Failed_pool_connection "Failed pool connection")
   | `Request_failed _ | `Response_failed _
   | `Response_rejected _ (* Response_rejected *) ->
-      raise (Errors.Failed_to_fetch "No books to be found")
+      raise on_query_error
   | _ -> raise (Errors.Internal_error "Internal Error")
 
 (** Get all books from the database *)
@@ -64,7 +65,9 @@ let get_all_books (pool : pool) =
       else Lwt_result.fail (Errors.Failed_to_fetch "No books to be found")
   | Error e ->
       log_error e;
-      Lwt_result.fail @@ handle_caqti_error e
+      Lwt_result.fail
+      @@ handle_caqti_error e
+           ~on_query_error:(Errors.Failed_to_fetch "No books to be found")
 
 (** Get a single book from the database *)
 let get_book (pool : pool) (id : int) =
@@ -81,7 +84,9 @@ let get_book (pool : pool) (id : int) =
   | Ok v -> Lwt_result.return v
   | Error e ->
       log_error e;
-      Lwt_result.fail @@ handle_caqti_error e
+      Lwt_result.fail
+      @@ handle_caqti_error e
+           ~on_query_error:(Errors.Failed_to_fetch "books not found")
 
 (** Create one book in the database *)
 let create_book (pool : pool) (book : Lib_types.Book.create_book) =
@@ -103,6 +108,7 @@ let create_book (pool : pool) (book : Lib_types.Book.create_book) =
   | Error e ->
       log_error e;
       Lwt_result.fail @@ handle_caqti_error e
+           ~on_query_error:(Errors.Failed_to_create "Could not create book")
 
 (* Change one book in the database *)
 (** INFO: removed since you never really get to override all the data on the
@@ -159,6 +165,7 @@ let update_book (pool : pool) (book : Lib_types.Book.patch_book) (id : int) =
   | Error e ->
       log_error e;
       Lwt_result.fail @@ handle_caqti_error e
+           ~on_query_error:(Errors.Failed_to_update "Could not update book")
 
 (** Delete a book from the database *)
 let delete_book (pool : pool) (id : int) =
@@ -185,3 +192,4 @@ let delete_book (pool : pool) (id : int) =
   | Error e ->
       log_error e;
       Lwt_result.fail @@ handle_caqti_error e
+           ~on_query_error:(Errors.Failed_to_delete "Could not delete book")

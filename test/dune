@@ -1,2 +1,15 @@
 (test
- (name test_http))
+ (name tests)
+ (libraries 
+   lib
+   alcotest
+   dream
+ )
+ (modules tests data)
+)
+
+(env
+  (dev
+    (flags (:standard -warn-error -a))
+  )
+)

@@ -44,6 +44,8 @@ let post : routeHandler =
  fun req ->
   let* body = Dream.body req in
   let pool = get_pool req in
+  Printf.printf "%s\n" body;
+  Stdlib.flush stdout;
   let book : create_book = Lib_parse.create_book_of_json body in
   let* result = Database.create_book pool book in
   match result with Ok _ -> empty `Created | Error e -> raise e
