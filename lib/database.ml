@@ -95,12 +95,12 @@ let create_book (pool : pool) (book : Lib_types.Book.create_book) =
       (fun (module Db : Caqti_lwt.CONNECTION) ->
         let timestamp = Int64.of_float @@ Unix.time () in
         let query =
-          Caqti_type.(t4 string float string int64 ->. unit)
-            "INSERT INTO books (title, chapter, image_link, last_modified) \
-             VALUES ($1, $2, $3, $4)"
+          Caqti_type.(t7 string float string int64 string bool bool ->. unit)
+            "INSERT INTO books (title, chapter, image_link, last_modified, kind, on_hiatus, is_finished) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7)"
         in
-        let title, chapter, cover_image = book in
-        Db.exec query (title, chapter, cover_image, timestamp))
+        let title, chapter, cover_image, kind, on_hiatus, is_finished = book in
+        Db.exec query (title, chapter, cover_image, timestamp, kind, on_hiatus, is_finished))
       pool
   in
   match res with

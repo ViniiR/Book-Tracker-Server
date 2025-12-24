@@ -38,7 +38,7 @@ module Integration = struct
     check testable_status "Get book" `OK (Dream.status res)
 
   let test_create_book () =
-    let res = auth_req `POST "/book" ~body:Data.Json.valid () in
+    let res = auth_req `POST "/book" ~body:Data.Json.valid_create () in
     check testable_status "Create book" `Created (Dream.status res)
 
   let test_patch_book () =
@@ -49,9 +49,33 @@ module Integration = struct
     let res = auth_req `DELETE "/book/1" () in
     check testable_status "Delete book" `No_Content (Dream.status res)
 
+  (* // *)
+
   let test_unknown_route () =
     let res = auth_req `GET "/unknown" () in
     check testable_status "Unknown" `Not_Found (Dream.status res)
+
+  (* // *)
+
+  (* let bad_test_get_all_books () = *)
+  (*   let res = auth_req `GET "/books" () in *)
+  (*   check testable_status "Get all books" `OK (Dream.status res) *)
+
+  let bad_test_get_book () =
+    let res = auth_req `GET "/book/99" () in
+    check testable_status "Get book" `Not_Found (Dream.status res)
+
+  let bad_test_create_book () =
+    let res = auth_req `POST "/book" ~body:Data.Json.invalid_create () in
+    check testable_status "Create book" `Bad_Request (Dream.status res)
+
+  let bad_test_patch_book () =
+    let res = auth_req `PATCH "/book/1" ~body:Data.Json.invalid_patch () in
+    check testable_status "Patch book" `Bad_Request (Dream.status res)
+
+  let bad_test_delete_book () =
+    let res = auth_req `DELETE "/book/99" () in
+    check testable_status "Delete book" `Bad_Request (Dream.status res)
 end
 
 module Unit = struct
@@ -99,13 +123,18 @@ module Unit = struct
     let open! Yojson.Safe in
     let open! Yojson.Safe.Util in
     let json =
-      let title, chapter, cover_image = Data.Book.create_book in
+      let title, chapter, cover_image, kind, on_hiatus, is_finished =
+        Data.Book.create_book
+      in
       Yojson.Safe.to_string
       @@ `Assoc
            [
              ("title", `String title);
              ("chapter", `Float chapter);
              ("cover_image", `String cover_image);
+             ("kind", `String kind);
+             ("on_hiatus", `Bool on_hiatus);
+             ("is_finished", `Bool is_finished);
            ]
     in
     let book = Lib.Lib_parse.create_book_of_json json in
@@ -127,6 +156,17 @@ module Unit = struct
         arr :=
           Array.append !arr
             [| ("cover_image", `String (Option.get book.cover_image_opt)) |];
+      if Option.is_some book.kind_opt then
+        arr :=
+          Array.append !arr [| ("kind", `String (Option.get book.kind_opt)) |];
+      if Option.is_some book.on_hiatus_opt then
+        arr :=
+          Array.append !arr
+            [| ("on_hiatus", `Bool (Option.get book.on_hiatus_opt)) |];
+      if Option.is_some book.is_finished_opt then
+        arr :=
+          Array.append !arr
+            [| ("is_finished", `Bool (Option.get book.is_finished_opt)) |];
       Yojson.Safe.to_string @@ `Assoc (Array.to_list !arr)
     in
     let book = Lib.Lib_parse.patch_book_of_json json in
@@ -157,5 +197,10 @@ let () =
           test_case "delete" `Slow test_delete_book;
           (* Bad routes *)
           test_case "unknown" `Slow test_unknown_route;
+          (* // *)
+          test_case "post-err" `Slow bad_test_create_book;
+          test_case "get-err" `Slow bad_test_get_book;
+          test_case "patch-err" `Slow bad_test_patch_book;
+          test_case "delete-err" `Slow bad_test_delete_book;
         ] );
     ]

@@ -20,7 +20,22 @@ let create_book_of_json str : Lib_types.Book.create_book =
       | `String v -> v
       | _ -> raise (Errors.Incorrect_type "Expected JSON type String")
     in
-    (title, chapter, cover_image)
+    let kind =
+      match member "kind" json with
+      | `String v -> v
+      | _ -> raise (Errors.Incorrect_type "Expected JSON type String")
+    in
+    let on_hiatus =
+      match member "on_hiatus" json with
+      | `Bool v -> v
+      | _ -> raise (Errors.Incorrect_type "Expected JSON type Bool")
+    in
+    let is_finished =
+      match member "is_finished" json with
+      | `Bool v -> v
+      | _ -> raise (Errors.Incorrect_type "Expected JSON type Bool")
+    in
+    (title, chapter, cover_image, kind, on_hiatus, is_finished)
   with
   | Yojson.Json_error e ->
       Printf.eprintf "%s" e;
@@ -54,7 +69,32 @@ let patch_book_of_json str : Lib_types.Book.patch_book =
       | `Null -> None
       | _ -> raise (Errors.Incorrect_type "Expected JSON type String")
     in
-    { title_opt; chapter_opt; cover_image_opt }
+    let kind_opt =
+      match member "kind" json with
+      | `String v -> Some v
+      | `Null -> None
+      | _ -> raise (Errors.Incorrect_type "Expected JSON type String")
+    in
+    let on_hiatus_opt =
+      match member "on_hiatus" json with
+      | `Bool v -> Some v
+      | `Null -> None
+      | _ -> raise (Errors.Incorrect_type "Expected JSON type Bool")
+    in
+    let is_finished_opt =
+      match member "is_finished" json with
+      | `Bool v -> Some v
+      | `Null -> None
+      | _ -> raise (Errors.Incorrect_type "Expected JSON type Bool")
+    in
+    {
+      title_opt;
+      chapter_opt;
+      cover_image_opt;
+      kind_opt;
+      on_hiatus_opt;
+      is_finished_opt;
+    }
   with
   | Yojson.Json_error e ->
       Printf.eprintf "%s" e;
@@ -74,6 +114,9 @@ let json_of_book (book : book) : Yojson.Safe.t =
       ("id", `Int book.id);
       (* JSON does not support bigints(64 bit) *)
       ("last_modified", `String (Int64.to_string book.last_modified));
+      ("kind", `String book.kind);
+      ("on_hiatus", `Bool book.on_hiatus);
+      ("is_finished", `Bool book.is_finished);
     ]
 
 let json_of_book_list (list : book list) : Yojson.Safe.t =

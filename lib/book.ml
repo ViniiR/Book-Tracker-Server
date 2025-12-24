@@ -44,8 +44,6 @@ let post : routeHandler =
  fun req ->
   let* body = Dream.body req in
   let pool = get_pool req in
-  Printf.printf "%s\n" body;
-  Stdlib.flush stdout;
   let book : create_book = Lib_parse.create_book_of_json body in
   let* result = Database.create_book pool book in
   match result with Ok _ -> empty `Created | Error e -> raise e
@@ -66,18 +64,28 @@ let post : routeHandler =
 (*   else empty `Internal_Server_Error *)
 
 let patch : routeHandler =
- fun req ->
-  let* body = Dream.body req in
-  let id = id_validator req in
-  let book : patch_book = Lib_parse.patch_book_of_json body in
-  let pool = get_pool req in
-  if
-    let open Option in
-    is_none book.title_opt && is_none book.chapter_opt
-    && is_none book.cover_image_opt
-  then raise (Errors.No_fields "No fields have been sent");
-  let* result = Database.update_book pool book id in
-  match result with Ok _ -> empty `No_Content | Error e -> raise e
+  let validate_input_patch_book book () : bool =
+    match book with
+    | {
+     title_opt = None;
+     chapter_opt = None;
+     cover_image_opt = None;
+     kind_opt = None;
+     on_hiatus_opt = None;
+     is_finished_opt = None;
+    } ->
+        true
+    | _ -> false
+  in
+  fun req ->
+    let* body = Dream.body req in
+    let id = id_validator req in
+    let book : patch_book = Lib_parse.patch_book_of_json body in
+    let pool = get_pool req in
+    if validate_input_patch_book book () then
+      raise (Errors.No_fields "No fields have been sent");
+    let* result = Database.update_book pool book id in
+    match result with Ok _ -> empty `No_Content | Error e -> raise e
 
 let delete : routeHandler =
  fun req ->

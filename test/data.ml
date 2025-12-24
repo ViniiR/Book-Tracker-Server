@@ -1,10 +1,19 @@
 module Json = struct
-  let valid =
+  let valid_create =
     {|
       {
         "title": "test",
         "chapter": 2.5,
-        "cover_image": ""
+        "cover_image": "",
+        "kind": "book",
+        "on_hiatus": false,
+        "is_finished": false
+      }
+    |}
+
+  let invalid_create = {|
+      {
+        "title": "test"
       }
     |}
 
@@ -16,31 +25,35 @@ module Json = struct
       }
     |}
 
-  let wrong_type =
-    {|
-      {
-        "title": "test",
-        "chapter": "2.5",
-        "cover_image": "" 
-      }
+  let invalid_patch = {|
+      {}
     |}
 
-  let missing_field =
-    {|
-      {
-        "title": "test",
-        "chapter": "2.5"
-      }
-    |}
-
-  let invalid_syntax =
-    {|
-      {
-        "title": "test"
-        "chapter": 2.5
-        "chapter": "2.5",
-      }
-    |}
+  (* let wrong_type = *)
+  (*   {| *)
+  (*     { *)
+  (*       "title": "test", *)
+  (*       "chapter": "2.5", *)
+  (*       "cover_image": ""  *)
+  (*     } *)
+  (*   |} *)
+  (**)
+  (* let missing_field = *)
+  (*   {| *)
+  (*     { *)
+  (*       "title": "test", *)
+  (*       "chapter": "2.5" *)
+  (*     } *)
+  (*   |} *)
+  (**)
+  (* let invalid_syntax = *)
+  (*   {| *)
+  (*     { *)
+  (*       "title": "test" *)
+  (*       "chapter": 2.5 *)
+  (*       "chapter": "2.5", *)
+  (*     } *)
+  (*   |} *)
 end
 
 module Headers = struct
@@ -57,9 +70,12 @@ module Book = struct
         cover_image = "";
         id = 1;
         last_modified = Int64.of_int 1_000_000;
+        kind = "book";
+        on_hiatus = false;
+        is_finished = false;
       }
 
-  let create_book = Lib.Lib_types.Book.("test", 1.0, "")
+  let create_book = Lib.Lib_types.Book.("test", 1.0, "", "book", false, false)
 
   let patch_book =
     Lib.Lib_types.Book.
@@ -67,5 +83,8 @@ module Book = struct
         title_opt = Some "test";
         chapter_opt = Some 2.0;
         cover_image_opt = None;
+        kind_opt = Some "book";
+        on_hiatus_opt = None;
+        is_finished_opt = None;
       }
 end
