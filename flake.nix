@@ -8,34 +8,50 @@
         pkgs = import nixpkgs {inherit system;};
         lib = pkgs.lib;
     in {
+        # Will be built by docker image
+        packages.${system}.default = pkgs.ocamlPackages.buildDunePackage {
+            pname = "server";
+            version = "0.1";
+            src = ./.;
+
+            duneVersion = "3";
+
+            nativeBuildInputs = with pkgs.ocamlPackages; [
+                ocaml
+                dune_3
+                findlib
+                dream
+            ];
+            buildInputs = with pkgs.ocamlPackages; [
+                dream
+                dream-pure
+                lwt
+                lwt_ppx
+                caqti
+                caqti-lwt
+                caqti-async
+                caqti-driver-postgresql
+                yojson
+                alcotest
+            ];
+        };
+
         devShells.${system}.default = pkgs.mkShell rec {
             NIX_ENFORCE_PURITY = 0;
-            LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
+            LD_LIBRARY_PATH = lib.makeLibraryPath packages;
 
             # Dev environment variables
             PGSQL_CONNECTION = "postgresql://main:development@localhost:5432/main";
             AUTH_USERNAME = "dev";
             AUTH_PASSWORD = "developmentpassword";
+            RUN_HOST = "127.0.0.1";
+            PORT = "5001";
 
-            # Packages available in the User's shell
+            # Packages
             packages = with pkgs; [
-                zsh
-                opam
-                ocamlPackages.ocaml-lsp
-                ocamlPackages.ocamlformat
-                ocamlPackages.dune_3
-            ];
-
-            # Packages necessary to only Build the project
-            nativeBuildInputs = with pkgs; [
-            ];
-
-            # Packages necessary for Running the Built program and or Building
-            buildInputs = with pkgs; [
-                ocaml
+                # Libs
                 ocamlPackages.dream
                 ocamlPackages.dream-pure
-                ocamlPackages.findlib
                 ocamlPackages.lwt
                 ocamlPackages.lwt_ppx
                 ocamlPackages.caqti
@@ -44,6 +60,17 @@
                 ocamlPackages.caqti-driver-postgresql
                 ocamlPackages.yojson
                 ocamlPackages.alcotest
+
+                # Shell packages
+                zsh
+                opam
+
+                # Build packages
+                ocaml
+                ocamlPackages.ocaml-lsp
+                ocamlPackages.ocamlformat
+                ocamlPackages.dune_3
+                ocamlPackages.findlib
             ];
 
             shellHook = ''
